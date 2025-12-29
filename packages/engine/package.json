@@ -6,8 +6,8 @@
   "type": "module",
   "scripts": {
     "test": "vitest run",
-    "build-mini": "tsc --emitDeclarationOnly && esbuild src/index.ts --bundle --minify --format=esm --outfile=dist/index.js",
-    "build": "tsc --emitDeclarationOnly && node build.mjs"
+    "build": "tsc --emitDeclarationOnly && esbuild src/index.ts --bundle --minify --format=esm --outfile=dist/index.js",
+    "build-obfus": "tsc --emitDeclarationOnly && node build.mjs"
   },
   "keywords": [],
   "author": {
