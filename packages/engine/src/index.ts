@@ -15,12 +15,18 @@ interface HistoryEntry {
     redo: Operation;
 }
 
+const PATH_REGEX = /([^\.\[\]]+)|\[(\d+)\]|\[(\w+):([^\]]+)\]/g;
+
 export class DoIt {
     private state: any;
     private undoStack: HistoryEntry[] = [];
     private redoStack: HistoryEntry[] = [];
     private maxHistory: number;
     private listeners: Array<(state: any, history: any) => void> = [];
+
+    private pathCache = new Map<string, PathToken[]>();
+    private historyDirty = true;
+    private cachedHistory: any;
 
     constructor(initialState: any = {}, options: { maxHistory?: number } = {}) {
         this.state = initialState;
@@ -32,41 +38,45 @@ export class DoIt {
     }
 
     public getHistory() {
-        return {
+        if (!this.historyDirty) return this.cachedHistory;
+
+        this.cachedHistory = {
             undo: this.undoStack.length,
             redo: this.redoStack.length,
             canUndo: this.undoStack.length > 0,
             canRedo: this.redoStack.length > 0
         };
+        this.historyDirty = false;
+        return this.cachedHistory;
     }
 
     public set(path: string, value: any) {
-        
-        const tokens = parsePath(path);
+
+        const tokens = this.getParsedPath(path);
         const probeResult = probe(this.state, tokens);
 
         let undoOp: Operation;
 
         if (probeResult.missingIndex !== -1) {
-         
+
             const missingToken = tokens[probeResult.missingIndex];
 
             const creationPath = reconstructPath(tokens.slice(0, probeResult.missingIndex + 1));
 
             undoOp = { op: 'delete', path: creationPath };
         } else {
-            
-            undoOp = { op: 'set', path: path, value: probeResult.value };
+
+            undoOp = { op: 'set', path: path, value: this.cloneValue(probeResult.value) };
         }
 
         const redoOp: Operation = { op: 'set', path, value };
 
-        
+
         applyOperation(this.state, redoOp);
 
-        
+
         this.undoStack.push({ undo: undoOp, redo: redoOp });
-        this.redoStack = []; 
+        this.redoStack = [];
 
         if (this.undoStack.length > this.maxHistory) {
             this.undoStack.shift();
@@ -100,6 +110,7 @@ export class DoIt {
     public clearHistory() {
         this.undoStack = [];
         this.redoStack = [];
+        this.pathCache.clear();
         this.notify();
     }
 
@@ -111,28 +122,63 @@ export class DoIt {
     }
 
     private notify() {
+        this.historyDirty = true;
         const history = this.getHistory();
         this.listeners.forEach(l => l(this.state, history));
+    }
+
+    private getParsedPath(path: string): PathToken[] {
+        let tokens = this.pathCache.get(path);
+        if (!tokens) {
+            tokens = parsePath(path);
+            this.pathCache.set(path, tokens);
+
+            // Limit cache size to prevent memory bloat
+            if (this.pathCache.size > 1000) {
+                const firstKey: string | any = this.pathCache.keys().next().value;
+                this.pathCache.delete(firstKey);
+            }
+        }
+        return tokens;
+    }
+
+    private cloneValue(value: any): any {
+        if (value === null || value === undefined || typeof value !== 'object') return value;
+        if (Array.isArray(value)) return value.map(v => this.cloneValue(v));
+        if (Array.isArray(value)) {
+            return value.map(item => this.cloneValue(item));
+        }
+
+        const cloned: any = {};
+        for (const key in value) {
+            if (value.hasOwnProperty(key)) {
+                cloned[key] = this.cloneValue(value[key]);
+            }
+        }
+        return cloned;
     }
 }
 
 
 export function parsePath(path: string): PathToken[] {
-    const regex = /([^\.\[\]]+)|\[(\d+)\]|\[(\w+):([^\]]+)\]/g;
     const tokens: PathToken[] = [];
     let match;
-    while ((match = regex.exec(path))) {
+    while ((match = PATH_REGEX.exec(path))) {
         if (match[1]) {
             tokens.push({ type: "key", value: match[1] });
         } else if (match[2]) {
             tokens.push({ type: "index", value: Number(match[2]) });
         } else if (match[3]) {
-            
+
             let val: any = match[4];
-            if (!isNaN(Number(val))) val = Number(val);
-            
-            if (typeof val === 'string' && (val.startsWith("'") || val.startsWith('"'))) {
-                val = val.slice(1, -1);
+            if (!isNaN(Number(val))) {
+                val = Number(val);
+            } else {
+                // Remove quotes if present
+                if ((val.startsWith("'") && val.endsWith("'")) ||
+                    (val.startsWith('"') && val.endsWith('"'))) {
+                    val = val.slice(1, -1);
+                }
             }
 
             tokens.push({
@@ -149,7 +195,10 @@ export function reconstructPath(tokens: PathToken[]): string {
     return tokens.map((t, i) => {
         if (t.type === 'key') return (i > 0 ? '.' : '') + t.value;
         if (t.type === 'index') return `[${t.value}]`;
-        if (t.type === 'filter') return `[${t.key}:${t.value}]`;
+        if (t.type === 'filter') {
+            const val = typeof t.value === 'string' ? `"${t.value}"` : t.value;
+            return `[${t.key}:${val}]`;
+        }
         return '';
     }).join('');
 }
@@ -157,7 +206,7 @@ export function reconstructPath(tokens: PathToken[]): string {
 interface ProbeResult {
     exists: boolean;
     value: any;
-    missingIndex: number; 
+    missingIndex: number;
 }
 
 export function probe(obj: any, tokens: PathToken[]): ProbeResult {
@@ -175,7 +224,7 @@ export function probe(obj: any, tokens: PathToken[]): ProbeResult {
             current = current[token.value];
         } else if (token.type === 'index') {
             if (!Array.isArray(current)) return { exists: false, value: undefined, missingIndex: i };
-            if (token.value >= current.length) return { exists: false, value: undefined, missingIndex: i };
+            if (token.value < 0 || token.value >= current.length) return { exists: false, value: undefined, missingIndex: i };
             current = current[token.value];
         } else if (token.type === 'filter') {
             if (!Array.isArray(current)) return { exists: false, value: undefined, missingIndex: i };
@@ -198,11 +247,11 @@ export function applyOperation(obj: any, operation: Operation) {
     let current = obj;
 
     if (operation.op === 'delete') {
-        
+
         for (let i = 0; i < tokens.length - 1; i++) {
             const token = tokens[i];
-            current = resolveNext(current, token, false); 
-            if (!current) return; 
+            current = resolveNext(current, token, false);
+            if (!current) return;
         }
 
         const lastToken = tokens[tokens.length - 1];
@@ -210,7 +259,7 @@ export function applyOperation(obj: any, operation: Operation) {
             delete current[lastToken.value];
         } else if (lastToken.type === 'index') {
             if (Array.isArray(current)) {
-                
+
                 current.splice(lastToken.value, 1);
             }
         } else if (lastToken.type === 'filter') {
@@ -220,7 +269,7 @@ export function applyOperation(obj: any, operation: Operation) {
             }
         }
     } else if (operation.op === 'set') {
-        
+
         for (let i = 0; i < tokens.length - 1; i++) {
             const token = tokens[i];
             current = resolveNext(current, token, true);
@@ -232,14 +281,23 @@ export function applyOperation(obj: any, operation: Operation) {
         } else if (lastToken.type === 'index') {
             current[lastToken.value] = operation.value;
         } else if (lastToken.type === 'filter') {
-            
+
             if (Array.isArray(current)) {
-                let found = current.find((item: any) => item[lastToken.key] == lastToken.value);
+                let found = current.find((item: any) =>
+                    item && item[lastToken.key] == lastToken.value
+                );
                 if (!found) {
                     found = { [lastToken.key]: lastToken.value };
                     current.push(found);
                 }
-                Object.assign(found, operation.value);
+                // Merge the value into found object
+                if (typeof operation.value === 'object' && !Array.isArray(operation.value)) {
+                    Object.assign(found, operation.value);
+                } else {
+                    // Replace entirely if not merging objects
+                    const idx = current.indexOf(found);
+                    current[idx] = { ...found, ...operation.value };
+                }
             }
         }
     }
@@ -254,12 +312,12 @@ function resolveNext(current: any, token: PathToken, createIfMissing: boolean): 
     }
     if (token.type === 'index') {
         if (createIfMissing && current[token.value] === undefined) {
-            current[token.value] = {}; 
+            current[token.value] = {};
         }
         return current[token.value];
     }
     if (token.type === 'filter') {
-        if (!Array.isArray(current)) return undefined; 
+        if (!Array.isArray(current)) return undefined;
         let found = current.find((item: any) => item[token.key] == token.value);
         if (!found && createIfMissing) {
             found = { [token.key]: token.value };
