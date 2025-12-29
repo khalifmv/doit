@@ -118,11 +118,14 @@
       !event.shiftKey;
 
     const isRedo =
-      (
-        (!isMac && event.ctrlKey && (event.key.toLowerCase() === "y" || (event.key.toLowerCase() === "z" && event.shiftKey)))
-        ||
-        (isMac && event.metaKey && event.shiftKey && event.key.toLowerCase() === "z")
-      );
+      (!isMac &&
+        event.ctrlKey &&
+        (event.key.toLowerCase() === "y" ||
+          (event.key.toLowerCase() === "z" && event.shiftKey))) ||
+      (isMac &&
+        event.metaKey &&
+        event.shiftKey &&
+        event.key.toLowerCase() === "z");
 
     if (isUndo && canUndo) {
       event.preventDefault();
@@ -139,7 +142,21 @@
   <div class="main-content">
     <div class="header">
       <h1>doit</h1>
-      <p class="subtitle">Undo/Redo State Management</p>
+
+      <div style=" display: flex; align-items: center; gap: 10px; ">
+        <p class="subtitle">
+          Undo/Redo State Management
+          
+        </p>
+        <iframe
+            src="https://ghbtns.com/github-btn.html?user=khalifmv&repo=doit&type=star&size=large&text=false"
+            frameborder="0"
+            scrolling="0"
+            width="170"
+            height="30"
+            title="GitHub"
+          ></iframe>
+      </div>
     </div>
 
     <div class="card">
@@ -286,7 +303,7 @@
   }
 
   .subtitle {
-    margin: 8px 0 0 0;
+    margin: 0;
     color: #6b6b6b;
     font-size: 15px;
   }
@@ -530,7 +547,6 @@
     color: #2d2d2d;
   }
 
-  
   .log-list::-webkit-scrollbar,
   .code-block::-webkit-scrollbar {
     width: 8px;
