@@ -1,12 +1,12 @@
 
 import { describe, it, expect, beforeEach } from 'vitest';
-import { UndoRedoEngine } from '../src/index';
+import { DoIt } from '../src/index';
 
-describe('UndoRedoEngine', () => {
-    let engine: UndoRedoEngine;
+describe('DoIt', () => {
+    let engine: DoIt;
 
     beforeEach(() => {
-        engine = new UndoRedoEngine({
+        engine = new DoIt({
             user: {}
         });
     });
@@ -30,7 +30,7 @@ describe('UndoRedoEngine', () => {
     });
 
     it('should undo array item creation via filter', () => {
-        engine = new UndoRedoEngine({ items: [] });
+        engine = new DoIt({ items: [] });
 
         // Add item with id:1 and name: 'Apple'
         engine.set('items[id:1].name', 'Apple');
@@ -45,7 +45,7 @@ describe('UndoRedoEngine', () => {
     });
 
     it('should handle standard replace undo', () => {
-        engine = new UndoRedoEngine({ config: { valid: true } });
+        engine = new DoIt({ config: { valid: true } });
 
         engine.set('config.valid', false);
         expect(engine.getState().config.valid).toBe(false);
