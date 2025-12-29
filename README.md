@@ -1,6 +1,6 @@
 # doit
 
-A lightweight, path-based undo-redo state management library for JavaScript/TypeScript applications.
+A lightweight & framework-agnostic, path-based undo-redo state management library for JavaScript/TypeScript applications.
 
 ## Concept
 
