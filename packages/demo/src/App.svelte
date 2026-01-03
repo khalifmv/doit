@@ -1,6 +1,6 @@
 <script lang="ts">
   import { Redo2, Undo2 } from "@lucide/svelte";
-  import { DoIt } from "doit-js";
+  import { DoIt } from "doit-lib";
   import { onMount } from "svelte";
 
   let engine: DoIt;

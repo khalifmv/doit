@@ -4,7 +4,7 @@ A lightweight & framework-agnostic, path-based undo-redo state management librar
 
 ## Concept
 
-`doit-js` provides a centralized store where every mutation is recorded as an operation (`set`, `delete`). It allows you to modify deeply nested state using a string-based path syntax, automatically generating the corresponding inverse operations for undo capabilities.
+`doit-lib` provides a centralized store where every mutation is recorded as an operation (`set`, `delete`). It allows you to modify deeply nested state using a string-based path syntax, automatically generating the corresponding inverse operations for undo capabilities.
 
 Key features:
 - **Path-based mutations**: Modify deep state easily (e.g., `users[0].name`).
@@ -15,13 +15,13 @@ Key features:
 ## Installation
 
 ```bash
-npm install doit-js # not published yet
+npm install doit-lib
 ```
 
 ## Basic Usage
 
 ```typescript
-import { DoIt } from 'doit-js';
+import { DoIt } from 'doit-lib';
 
 // Initialize store
 const store = new DoIt({
@@ -60,7 +60,7 @@ You can create a simple hook to connect the store to your components.
 
 ```tsx
 import { useEffect, useState } from 'react';
-import { DoIt } from 'doit-js';
+import { DoIt } from 'doit-lib';
 
 const store = new DoIt({ count: 0 });
 
@@ -97,7 +97,7 @@ Using Vue's Composition API.
 ```vue
 <script setup>
 import { ref, onMounted, onUnmounted } from 'vue';
-import { DoIt } from 'doit-js';
+import { DoIt } from 'doit-lib';
 
 const store = new DoIt({ count: 0 });
 const state = ref(store.getState());
