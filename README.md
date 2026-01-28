@@ -151,5 +151,5 @@ This repository is set up as a monorepo. To run the included Svelte-based demo:
 
 ## TODO
 
-*   [ ] Publish to NPM
+*   [x] Publish to NPM
 *   [ ] Add support for persistent history (e.g., localStorage)
