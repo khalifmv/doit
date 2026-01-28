@@ -1,6 +1,10 @@
-# doit
+<div align="left">
+<img src="doit.png" width="100px"/>
+</div>
 
 A lightweight & framework-agnostic, path-based undo-redo state management library for JavaScript/TypeScript applications.
+
+[![npm](https://img.shields.io/badge/npm-CB3837?logo=npm&logoColor=fff)](https://www.npmjs.com/package/doit-lib)
 
 ## Concept
 
