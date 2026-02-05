@@ -88,10 +88,12 @@
   }
 
   function batchDemo() {
-    engine.set("user.name", "Batch User");
-    engine.set("user.age", 30);
-    engine.set("user.email", "batch@example.com");
-    addLog("Batch Update", "Multiple fields updated (separate steps)");
+    engine.batch((b: { set: (path: string, value: any) => void }) => {
+      b.set("user.name", "Batch User");
+      b.set("user.age", 30);
+      b.set("user.email", "batch@example.com");
+    });
+    addLog("Batch Update", "3 fields updated in single history entry");
   }
 
   function clearHistory() {
@@ -144,18 +146,15 @@
       <h1>doit</h1>
 
       <div style=" display: flex; align-items: center; gap: 10px; ">
-        <p class="subtitle">
-          Undo/Redo State Management
-          
-        </p>
+        <p class="subtitle">Undo/Redo State Management</p>
         <iframe
-            src="https://ghbtns.com/github-btn.html?user=khalifmv&repo=doit&type=star&size=large&text=false"
-            frameborder="0"
-            scrolling="0"
-            width="170"
-            height="30"
-            title="GitHub"
-          ></iframe>
+          src="https://ghbtns.com/github-btn.html?user=khalifmv&repo=doit&type=star&size=large&text=false"
+          frameborder="0"
+          scrolling="0"
+          width="170"
+          height="30"
+          title="GitHub"
+        ></iframe>
       </div>
     </div>
 

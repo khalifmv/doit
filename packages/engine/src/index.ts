@@ -1,5 +1,3 @@
-
-
 export type PathToken =
     | { type: 'key'; value: string }
     | { type: 'index'; value: number }
@@ -17,16 +15,28 @@ interface HistoryEntry {
 
 const PATH_REGEX = /([^\.\[\]]+)|\[(\d+)\]|\[(\w+):([^\]]+)\]/g;
 
+interface StorageAdapter {
+    getItem(key: string): string | null;
+    setItem(key: string, value: string): void;
+    removeItem(key: string): void;
+}
+
+interface PersistOptions {
+    to: StorageAdapter;
+    key?: string;
+}
+
 export class DoIt {
     private state: any;
     private undoStack: HistoryEntry[] = [];
     private redoStack: HistoryEntry[] = [];
     private maxHistory: number;
     private listeners: Array<(state: any, history: any) => void> = [];
-
     private pathCache = new Map<string, PathToken[]>();
     private historyDirty = true;
     private cachedHistory: any;
+    private storage?: StorageAdapter;
+    private storageKey: string = 'doit-state';
 
     constructor(initialState: any = {}, options: { maxHistory?: number } = {}) {
         this.state = initialState;
@@ -50,48 +60,56 @@ export class DoIt {
         return this.cachedHistory;
     }
 
-    public set(path: string, value: any) {
-
+    public set(path: string, value: any, internal = false) {
         const tokens = this.getParsedPath(path);
         const probeResult = probe(this.state, tokens);
-
+        if (probeResult.exists && deepEqual(probeResult.value, value)) return;
         let undoOp: Operation;
-
         if (probeResult.missingIndex !== -1) {
-
-            const missingToken = tokens[probeResult.missingIndex];
-
             const creationPath = reconstructPath(tokens.slice(0, probeResult.missingIndex + 1));
-
             undoOp = { op: 'delete', path: creationPath };
         } else {
-
             undoOp = { op: 'set', path: path, value: this.cloneValue(probeResult.value) };
         }
-
         const redoOp: Operation = { op: 'set', path, value };
-
-
         applyOperation(this.state, redoOp);
-
-
-        this.undoStack.push({ undo: undoOp, redo: redoOp });
-        this.redoStack = [];
-
-        if (this.undoStack.length > this.maxHistory) {
-            this.undoStack.shift();
+        if (!internal) {
+            this.undoStack.push({ undo: undoOp, redo: redoOp });
+            this.redoStack = [];
+            if (this.undoStack.length > this.maxHistory) this.undoStack.shift();
+            this.notify();
         }
+        return { undoOp, redoOp };
+    }
 
+    public batch(callback: (batch: { set: (path: string, value: any) => void }) => void) {
+        const undoOps: Operation[] = [];
+        const redoOps: Operation[] = [];
+        const batchContext = {
+            set: (path: string, value: any) => {
+                const result = this.set(path, value, true);
+                if (result) {
+                    undoOps.push(result.undoOp);
+                    redoOps.push(result.redoOp);
+                }
+            }
+        };
+        callback(batchContext);
+        if (undoOps.length === 0) return;
+        const batchUndo: Operation = { op: 'batch', ops: undoOps.reverse() };
+        const batchRedo: Operation = { op: 'batch', ops: redoOps };
+        this.undoStack.push({ undo: batchUndo, redo: batchRedo });
+        this.redoStack = [];
+        if (this.undoStack.length > this.maxHistory) this.undoStack.shift();
         this.notify();
     }
+
 
     public undo() {
         if (this.undoStack.length === 0) return false;
         const entry = this.undoStack.pop()!;
-
         applyOperation(this.state, entry.undo);
         this.redoStack.push(entry);
-
         this.notify();
         return true;
     }
@@ -99,10 +117,8 @@ export class DoIt {
     public redo() {
         if (this.redoStack.length === 0) return false;
         const entry = this.redoStack.pop()!;
-
         applyOperation(this.state, entry.redo);
         this.undoStack.push(entry);
-
         this.notify();
         return true;
     }
@@ -112,6 +128,17 @@ export class DoIt {
         this.redoStack = [];
         this.pathCache.clear();
         this.notify();
+    }
+
+    public persist(options: PersistOptions) {
+        this.storage = options.to;
+        this.storageKey = options.key || 'doit-state';
+        this.loadFromStorage();
+        return this;
+    }
+
+    public unpersist() {
+        this.storage = undefined;
     }
 
     public subscribe(fn: (state: any, history: any) => void) {
@@ -125,6 +152,32 @@ export class DoIt {
         this.historyDirty = true;
         const history = this.getHistory();
         this.listeners.forEach(l => l(this.state, history));
+        this.saveToStorage();
+    }
+
+    private saveToStorage() {
+        if (!this.storage) return;
+        try {
+            const data = { state: this.state, undoStack: this.undoStack, redoStack: this.redoStack };
+            this.storage.setItem(this.storageKey, JSON.stringify(data));
+        } catch (e) {
+            console.error('Failed to save to storage:', e);
+        }
+    }
+
+    private loadFromStorage() {
+        if (!this.storage) return;
+        try {
+            const raw = this.storage.getItem(this.storageKey);
+            if (!raw) return;
+            const data = JSON.parse(raw);
+            if (data.state) this.state = data.state;
+            if (data.undoStack) this.undoStack = data.undoStack;
+            if (data.redoStack) this.redoStack = data.redoStack;
+            this.notify();
+        } catch (e) {
+            console.error('Failed to load from storage:', e);
+        }
     }
 
     private getParsedPath(path: string): PathToken[] {
@@ -132,11 +185,9 @@ export class DoIt {
         if (!tokens) {
             tokens = parsePath(path);
             this.pathCache.set(path, tokens);
-
-            // Limit cache size to prevent memory bloat
             if (this.pathCache.size > 1000) {
-                const firstKey: string | any = this.pathCache.keys().next().value;
-                this.pathCache.delete(firstKey);
+                const firstKey = this.pathCache.keys().next().value;
+                if (firstKey) this.pathCache.delete(firstKey);
             }
         }
         return tokens;
@@ -145,20 +196,13 @@ export class DoIt {
     private cloneValue(value: any): any {
         if (value === null || value === undefined || typeof value !== 'object') return value;
         if (Array.isArray(value)) return value.map(v => this.cloneValue(v));
-        if (Array.isArray(value)) {
-            return value.map(item => this.cloneValue(item));
-        }
-
         const cloned: any = {};
         for (const key in value) {
-            if (value.hasOwnProperty(key)) {
-                cloned[key] = this.cloneValue(value[key]);
-            }
+            if (value.hasOwnProperty(key)) cloned[key] = this.cloneValue(value[key]);
         }
         return cloned;
     }
 }
-
 
 export function parsePath(path: string): PathToken[] {
     const tokens: PathToken[] = [];
@@ -169,23 +213,13 @@ export function parsePath(path: string): PathToken[] {
         } else if (match[2]) {
             tokens.push({ type: "index", value: Number(match[2]) });
         } else if (match[3]) {
-
             let val: any = match[4];
             if (!isNaN(Number(val))) {
                 val = Number(val);
-            } else {
-                // Remove quotes if present
-                if ((val.startsWith("'") && val.endsWith("'")) ||
-                    (val.startsWith('"') && val.endsWith('"'))) {
-                    val = val.slice(1, -1);
-                }
+            } else if ((val.startsWith("'") && val.endsWith("'")) || (val.startsWith('"') && val.endsWith('"'))) {
+                val = val.slice(1, -1);
             }
-
-            tokens.push({
-                type: "filter",
-                key: match[3],
-                value: val
-            });
+            tokens.push({ type: "filter", key: match[3], value: val });
         }
     }
     return tokens;
@@ -247,7 +281,6 @@ export function applyOperation(obj: any, operation: Operation) {
     let current = obj;
 
     if (operation.op === 'delete') {
-
         for (let i = 0; i < tokens.length - 1; i++) {
             const token = tokens[i];
             current = resolveNext(current, token, false);
@@ -257,47 +290,33 @@ export function applyOperation(obj: any, operation: Operation) {
         const lastToken = tokens[tokens.length - 1];
         if (lastToken.type === 'key') {
             delete current[lastToken.value];
-        } else if (lastToken.type === 'index') {
-            if (Array.isArray(current)) {
-
-                current.splice(lastToken.value, 1);
-            }
-        } else if (lastToken.type === 'filter') {
-            if (Array.isArray(current)) {
-                const idx = current.findIndex((item: any) => item[lastToken.key] == lastToken.value);
-                if (idx !== -1) current.splice(idx, 1);
-            }
+        } else if (lastToken.type === 'index' && Array.isArray(current)) {
+            current.splice(lastToken.value, 1);
+        } else if (lastToken.type === 'filter' && Array.isArray(current)) {
+            const idx = current.findIndex((item: any) => item[lastToken.key] == lastToken.value);
+            if (idx !== -1) current.splice(idx, 1);
         }
     } else if (operation.op === 'set') {
-
         for (let i = 0; i < tokens.length - 1; i++) {
             const token = tokens[i];
             current = resolveNext(current, token, true);
         }
-
         const lastToken = tokens[tokens.length - 1];
         if (lastToken.type === 'key') {
             current[lastToken.value] = operation.value;
         } else if (lastToken.type === 'index') {
             current[lastToken.value] = operation.value;
-        } else if (lastToken.type === 'filter') {
-
-            if (Array.isArray(current)) {
-                let found = current.find((item: any) =>
-                    item && item[lastToken.key] == lastToken.value
-                );
-                if (!found) {
-                    found = { [lastToken.key]: lastToken.value };
-                    current.push(found);
-                }
-                // Merge the value into found object
-                if (typeof operation.value === 'object' && !Array.isArray(operation.value)) {
-                    Object.assign(found, operation.value);
-                } else {
-                    // Replace entirely if not merging objects
-                    const idx = current.indexOf(found);
-                    current[idx] = { ...found, ...operation.value };
-                }
+        } else if (lastToken.type === 'filter' && Array.isArray(current)) {
+            let found = current.find((item: any) => item && item[lastToken.key] == lastToken.value);
+            if (!found) {
+                found = { [lastToken.key]: lastToken.value };
+                current.push(found);
+            }
+            if (typeof operation.value === 'object' && !Array.isArray(operation.value)) {
+                Object.assign(found, operation.value);
+            } else {
+                const idx = current.indexOf(found);
+                current[idx] = { ...found, ...operation.value };
             }
         }
     }
@@ -311,9 +330,7 @@ function resolveNext(current: any, token: PathToken, createIfMissing: boolean): 
         return current[token.value];
     }
     if (token.type === 'index') {
-        if (createIfMissing && current[token.value] === undefined) {
-            current[token.value] = {};
-        }
+        if (createIfMissing && current[token.value] === undefined) current[token.value] = {};
         return current[token.value];
     }
     if (token.type === 'filter') {
@@ -326,4 +343,18 @@ function resolveNext(current: any, token: PathToken, createIfMissing: boolean): 
         return found;
     }
     return undefined;
+}
+
+function deepEqual(a: any, b: any): boolean {
+    if (a === b) return true;
+    if (a == null || b == null) return false;
+    if (typeof a !== 'object' || typeof b !== 'object') return false;
+    const keysA = Object.keys(a);
+    const keysB = Object.keys(b);
+    if (keysA.length !== keysB.length) return false;
+    for (const key of keysA) {
+        if (!keysB.includes(key)) return false;
+        if (!deepEqual(a[key], b[key])) return false;
+    }
+    return true;
 }

@@ -1,15 +1,19 @@
 {
   "name": "doit-lib",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "type": "module",
   "scripts": {
     "test": "vitest run",
-    "build": "tsc --emitDeclarationOnly && esbuild src/index.ts --bundle --minify --format=esm --outfile=dist/index.js",
-    "build-obfus": "tsc --emitDeclarationOnly && node build.mjs"
+    "build": "tsc --emitDeclarationOnly && esbuild src/index.ts --bundle --minify --format=esm --outfile=dist/index.js && gzip -k -f dist/index.js"
   },
-  "keywords": [],
+  "keywords": [
+    "undo-redo",
+    "state-management",
+    "framework-agnostic",
+    "typescript"
+  ],
   "author": {
     "name": "Khalif",
     "email": "",
@@ -17,11 +21,14 @@
   },
   "license": "MIT",
   "description": "",
-  "files": ["dist"],
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
   "devDependencies": {
     "@types/node": "^25.0.3",
     "esbuild": "^0.27.2",
-    "javascript-obfuscator": "^5.1.0",
     "terser": "^5.44.1",
     "typescript": "^5.9.3",
     "vitest": "^4.0.16"
